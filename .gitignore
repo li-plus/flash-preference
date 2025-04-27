@@ -1,0 +1,11 @@
+# ide
+.vscode
+
+# python
+__pycache__
+*.egg-info
+/dist/
+
+# log
+wandb/
+events.out.tfevents.*

@@ -1,0 +1,42 @@
+# reference: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
+[project]
+name = "flash-pref"
+dynamic = ["version"]
+authors = [
+    {name = "Jiahao Li", email = "liplus17@163.com"},
+]
+maintainers = [
+    {name = "Jiahao Li", email = "liplus17@163.com"},
+]
+description = "Accelerate LLM preference finetuning with a single line of code"
+readme = "README.md"
+requires-python = ">=3.7"
+keywords = ["Prefix Sharing", "Direct Preference Optimization", "Reward Model", "Preference Tuning"]
+license = {text = "MIT License"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "transformers<4.52.0,>=4.49.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/li-plus/flash-preference"
+Repository = "https://github.com/li-plus/flash-preference.git"
+
+# reference: https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html
+[tool.setuptools.dynamic]
+version = {attr = "flash_pref.__version__"}
+
+# reference: https://black.readthedocs.io/en/stable/usage_and_configuration/the_basics.html#configuration-format
+[tool.black]
+line-length = 120
+include = '\.py$'
