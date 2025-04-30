@@ -14,7 +14,7 @@ Install the stable version from PyPI:
 pip install flash-pref
 ```
 
-Or install the latest version from GitHub.
+Or install the latest version from GitHub:
 ```sh
 pip install git+https://github.com/li-plus/flash-preference.git@main
 ```
@@ -56,7 +56,7 @@ The performance speedup and memory saved relative to the baseline:
 
 ![](docs/perf.png)
 
-Benchmark settings is as below. Please refer to [tests/benchmark.py](tests/benchmark.py) for more details.
+Benchmark settings are as below. Please refer to [tests/benchmark.py](tests/benchmark.py) for more details.
 * Model: [Qwen/Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct) with gradient checkpointing, [Liger-Kernel](https://github.com/linkedin/Liger-Kernel) and [FlashAttention-2](https://github.com/Dao-AILab/flash-attention) enabled.
 * Data: mocked pairwise preference data where prompt and response lengths vary from 64 to 16k.
 * Computation: 1 forward pass and then 1 backward pass.
