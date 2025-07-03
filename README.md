@@ -50,12 +50,12 @@ with shared_prefix(model, input_ids=inputs.input_ids, attention_mask=inputs.atte
     output.logits.backward(torch.randn_like(output.logits))
 ```
 
-For [huggingface/trl](https://github.com/huggingface/trl) users, a drop-in replacement for trl trainers are also available:
+For [huggingface/trl](https://github.com/huggingface/trl) users, a drop-in replacement for trl trainers are also available. Check out the end-to-end training examples below.
 
-| Algorithm                            | Original Trainer             | Accelerated Trainer w/ Prefix Sharing      | Example                                    |
-| ------------------------------------ | ---------------------------- | ------------------------------------------ | ------------------------------------------ |
-| Direct Preference Optimization (DPO) | `from trl import DPOTrainer` | `from flash_pref import FlashDPOTrainer`   | [examples/dpo_trl.py](examples/dpo_trl.py) |
-| Reward Modeling (RM)                 | `from trl import TODO`       | `from flash_pref import TODO`              | TODO                                       |
+| Algorithm                      | Original Trainer                | Accelerated Trainer with Prefix Sharing     | Example                                                            |
+| ------------------------------ | ------------------------------- | ------------------------------------------- | ------------------------------------------------------------------ |
+| Direct Preference Optimization | `from trl import DPOTrainer`    | `from flash_pref import FlashDPOTrainer`    | [examples/dpo_trl.py](examples/dpo_trl.py)                         |
+| Reward Modeling                | `from trl import RewardTrainer` | `from flash_pref import FlashRewardTrainer` | [examples/reward_modeling_trl.py](examples/reward_modeling_trl.py) |
 
 ## Benchmark
 
