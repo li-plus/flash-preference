@@ -50,7 +50,7 @@ with shared_prefix(model, input_ids=inputs.input_ids, attention_mask=inputs.atte
     output.logits.backward(torch.randn_like(output.logits))
 ```
 
-For [huggingface/trl](https://github.com/huggingface/trl) users, a drop-in replacement for trl trainers are also available. Check out the end-to-end training examples below.
+For [huggingface/trl](https://github.com/huggingface/trl) users, a drop-in replacement for trl trainer is also available. Check out the end-to-end training examples below.
 
 | Algorithm                      | Original Trainer                | Accelerated Trainer with Prefix Sharing     | Example                                                            |
 | ------------------------------ | ------------------------------- | ------------------------------------------- | ------------------------------------------------------------------ |
