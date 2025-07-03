@@ -3,10 +3,11 @@ from __future__ import annotations
 import inspect
 from contextlib import ExitStack, contextmanager
 from itertools import chain
-from typing import TYPE_CHECKING, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Literal, Optional, Sequence, Tuple
 from unittest.mock import patch
 
 import torch
+import torch.nn.functional as F
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.utils.rnn import pad_sequence
@@ -47,7 +48,8 @@ def to_unshared(
     prefix_lens: Sequence[int],
     sequence_lens: Sequence[int],
     interleaved: bool,
-    padding: bool = True,
+    padding: Literal["none", "longest", "max_length"] = "longest",
+    max_length: Optional[int] = None,
 ) -> torch.Tensor:
     assert len(hidden_states) == 1, f"Expect batch_size to be 1, but got {len(hidden_states)}"
     hidden_states = hidden_states.squeeze(0)
@@ -87,8 +89,15 @@ def to_unshared(
             unshared_states += [prefix_states[prefix_idx], states]
 
     unshared_states = torch.cat(unshared_states)
-    if padding:
+    if padding != "none":
         unshared_states = pad_sequence(unshared_states.split(sequence_lens), batch_first=True)
+        if padding == "max_length":
+            if max_length is None:
+                raise ValueError("max_length must be specified when padding='max_length'")
+            pad_size = max_length - unshared_states.shape[1]
+            if pad_size > 0:
+                unshared_states = F.pad(unshared_states, (0, 0, 0, pad_size))
+
     return unshared_states
 
 
@@ -177,10 +186,10 @@ def patch_flash_attention_forward(prefix_lens: Sequence[int], sequence_lens: Seq
         # ===== extra logic for prefix sharing =====
         assert causal, "Prefix sharing does not support causal=False"
         key_states = to_unshared(
-            key_states, prefix_lens=prefix_lens, sequence_lens=sequence_lens, interleaved=interleaved, padding=False
+            key_states, prefix_lens=prefix_lens, sequence_lens=sequence_lens, interleaved=interleaved, padding="none"
         )
         value_states = to_unshared(
-            value_states, prefix_lens=prefix_lens, sequence_lens=sequence_lens, interleaved=interleaved, padding=False
+            value_states, prefix_lens=prefix_lens, sequence_lens=sequence_lens, interleaved=interleaved, padding="none"
         )
         # ===== extra logic end =====
 
@@ -295,7 +304,12 @@ def patch_qwen_visual_forward(
 
 @contextmanager
 def patch_layer_attention(
-    model, prefix_lens: Sequence[int], sequence_lens: Sequence[int], shared_attention: bool, interleaved: bool
+    model,
+    prefix_lens: Sequence[int],
+    sequence_lens: Sequence[int],
+    shared_attention: bool,
+    interleaved: bool,
+    max_length: int,
 ):
 
     def wrap_layer_forward(
@@ -315,7 +329,12 @@ def patch_layer_attention(
         # unshare prefix after the last layer
         if self.self_attn.layer_idx == self.self_attn.config.num_hidden_layers - 1:
             hidden_states = to_unshared(
-                hidden_states, prefix_lens=prefix_lens, sequence_lens=sequence_lens, interleaved=interleaved
+                hidden_states,
+                prefix_lens=prefix_lens,
+                sequence_lens=sequence_lens,
+                interleaved=interleaved,
+                padding="max_length",
+                max_length=max_length,
             )
 
         return hidden_states, *extra
@@ -328,7 +347,12 @@ def patch_layer_attention(
     ):
         if not shared_attention:
             hidden_states = to_unshared(
-                hidden_states, prefix_lens=prefix_lens, sequence_lens=sequence_lens, interleaved=interleaved
+                hidden_states,
+                prefix_lens=prefix_lens,
+                sequence_lens=sequence_lens,
+                interleaved=interleaved,
+                padding="max_length",
+                max_length=max_length,
             )
         hidden_states, *extra = old_forward_map[self](hidden_states, *args, **kwargs)
         if not shared_attention:
@@ -418,13 +442,8 @@ def shared_prefix(
     if not attention_mask[:, 0].all():
         raise RuntimeError("Expect input_ids to be right padded, but got padding tokens at the beginning")
 
-    # ensure padded to the longest
-    if not attention_mask[:, -1].any():
-        raise RuntimeError(
-            "Expect input_ids to be padded to the longest in the batch, but got extra padding tokens at the end"
-        )
-
     # prepare context
+    max_length = attention_mask.shape[1]
     sequence_lens = attention_mask.sum(dim=-1)
     prefix_lens = get_prefix_lens(
         input_ids=input_ids, sequence_lens=sequence_lens, group_size=group_size, interleaved=interleaved
@@ -441,6 +460,7 @@ def shared_prefix(
             sequence_lens=sequence_lens,
             shared_attention=shared_attention,
             interleaved=interleaved,
+            max_length=max_length,
         )
     ]
 
