@@ -11,17 +11,31 @@ import torch.nn.functional as F
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.utils.rnn import pad_sequence
+from transformers.utils import is_peft_available
 
 if TYPE_CHECKING:
     from transformers import PreTrainedModel
     from transformers.models.llama.modeling_llama import LlamaAttention, LlamaDecoderLayer, LlamaRotaryEmbedding
 
 
+def _check_prefix_and_sequence_lens(prefix_lens: Sequence[int], sequence_lens: Sequence[int]) -> None:
+    if len(sequence_lens) % len(prefix_lens) != 0:
+        raise ValueError(
+            f"Expect equal number of responses for each prefix, but got {len(prefix_lens)} prefixes and {len(sequence_lens)} sequences"
+        )
+
+
 def to_shared(
     hidden_states: torch.Tensor, prefix_lens: Sequence[int], sequence_lens: Sequence[int], interleaved: bool
 ) -> torch.Tensor:
     batch_size = len(hidden_states)
-    assert batch_size % len(prefix_lens) == 0, f"Inconsistent number of responses for each prompt"
+    if batch_size != len(sequence_lens):
+        raise ValueError(
+            f"Expect batch size to be equal to number of sequences, but got {batch_size} and {len(sequence_lens)}"
+        )
+
+    _check_prefix_and_sequence_lens(prefix_lens=prefix_lens, sequence_lens=sequence_lens)
+
     group_size = batch_size // len(prefix_lens)
 
     max_len = hidden_states.shape[1]
@@ -51,12 +65,11 @@ def to_unshared(
     padding: Literal["none", "longest", "max_length"] = "longest",
     max_length: Optional[int] = None,
 ) -> torch.Tensor:
-    assert len(hidden_states) == 1, f"Expect batch_size to be 1, but got {len(hidden_states)}"
+    if len(hidden_states) != 1:
+        raise ValueError(f"Expect batch_size to be 1, but got {len(hidden_states)}")
     hidden_states = hidden_states.squeeze(0)
 
-    assert (
-        len(sequence_lens) % len(prefix_lens) == 0
-    ), f"Expect equal number of responses for each prefix, but got {len(prefix_lens)} prefixes and {len(sequence_lens)} sequences"
+    _check_prefix_and_sequence_lens(prefix_lens=prefix_lens, sequence_lens=sequence_lens)
     group_size = len(sequence_lens) // len(prefix_lens)
 
     split_sizes = []
@@ -432,11 +445,14 @@ def shared_prefix(
         yield
         return
 
-    if isinstance(model, FSDP):
+    if isinstance(model, (FSDP, DDP)):
         model = model.module
 
-    if isinstance(model, DDP):
-        model = model.module
+    if is_peft_available():
+        from peft import PeftModel
+
+        if isinstance(model, PeftModel):
+            model = model.model
 
     # ensure right padding
     if not attention_mask[:, 0].all():

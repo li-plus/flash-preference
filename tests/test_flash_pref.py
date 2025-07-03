@@ -11,6 +11,7 @@ import torch.multiprocessing as mp
 import torch.nn.functional as F
 from flash_attn import flash_attn_varlen_func
 from liger_kernel.transformers import _apply_liger_kernel_to_instance
+from peft import LoraConfig, TaskType, get_peft_model
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import ShardingStrategy
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
@@ -368,8 +369,9 @@ def _test_flash_pref(
     image_grid_thw,
     image_nums,
     pad_size,
-    interleaved,
-    use_liger_kernel,
+    interleaved: bool,
+    use_liger_kernel: bool,
+    use_peft: bool,
     parallel_mode: Optional[str] = None,
 ):
     local_rank = int(os.getenv("LOCAL_RANK", "0"))
@@ -380,6 +382,10 @@ def _test_flash_pref(
 
     model = create_model(model_type=model_type, dtype=dtype, vocab_size=2048, attn_implementation=attn_implementation)
     model.gradient_checkpointing_enable()
+
+    if use_peft:
+        peft_config = LoraConfig(task_type=TaskType.CAUSAL_LM, r=16, lora_alpha=32, target_modules=["q_proj", "v_proj"])
+        model = get_peft_model(model, peft_config)
 
     if use_liger_kernel:
         _apply_liger_kernel_to_instance(model)
@@ -493,6 +499,7 @@ def _test_flash_pref(
 )
 @pytest.mark.parametrize("interleaved", [True, False])
 @pytest.mark.parametrize("use_liger_kernel", [False])
+@pytest.mark.parametrize("use_peft", [False, True])
 def test_flash_pref(
     model_type,
     dtype,
@@ -506,6 +513,7 @@ def test_flash_pref(
     pad_size,
     interleaved,
     use_liger_kernel,
+    use_peft,
 ):
     _test_flash_pref(
         model_type=model_type,
@@ -520,6 +528,7 @@ def test_flash_pref(
         pad_size=pad_size,
         interleaved=interleaved,
         use_liger_kernel=use_liger_kernel,
+        use_peft=use_peft,
     )
 
 
@@ -562,6 +571,7 @@ def _test_flash_pref_parallel_wrapper(rank, world_size, *args):
 )
 @pytest.mark.parametrize("use_liger_kernel", [False, True])
 @pytest.mark.parametrize("interleaved", [False])
+@pytest.mark.parametrize("use_peft", [False])
 @pytest.mark.parametrize("parallel_mode", ["fsdp", "ddp"])
 def test_flash_pref_parallel(
     model_type,
@@ -576,6 +586,7 @@ def test_flash_pref_parallel(
     pad_size,
     interleaved,
     use_liger_kernel,
+    use_peft,
     parallel_mode,
 ):
 
@@ -597,6 +608,7 @@ def test_flash_pref_parallel(
             pad_size,
             interleaved,
             use_liger_kernel,
+            use_peft,
             parallel_mode,
         ),
         nprocs=world_size,

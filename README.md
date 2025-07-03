@@ -32,7 +32,7 @@ model = AutoModelForCausalLM.from_pretrained(
     model_id, attn_implementation="flash_attention_2", use_cache=False, torch_dtype=torch.bfloat16, device_map="cuda"
 )
 
-prompt = "What is the next 10 numbers of this sequence: " + ", ".join(str(x) for x in range(500))
+prompt = "What are the next 10 numbers of this sequence: " + ", ".join(str(x) for x in range(500))
 chosen_response = ", ".join(str(x) for x in range(500, 500 + 10))
 rejected_response = ", ".join(str(x) for x in range(500, 500 + 10, 2))
 
@@ -49,6 +49,13 @@ with shared_prefix(model, input_ids=inputs.input_ids, attention_mask=inputs.atte
     output = model(**inputs)
     output.logits.backward(torch.randn_like(output.logits))
 ```
+
+For [huggingface/trl](https://github.com/huggingface/trl) users, a drop-in replacement for trl trainers are also available:
+
+| Algorithm                            | Original Trainer             | Accelerated Trainer w/ Prefix Sharing      | Example                                    |
+| ------------------------------------ | ---------------------------- | ------------------------------------------ | ------------------------------------------ |
+| Direct Preference Optimization (DPO) | `from trl import DPOTrainer` | `from flash_pref import FlashDPOTrainer`   | [examples/dpo_trl.py](examples/dpo_trl.py) |
+| Reward Modeling (RM)                 | `from trl import TODO`       | `from flash_pref import TODO`              | TODO                                       |
 
 ## Benchmark
 

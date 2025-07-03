@@ -27,6 +27,7 @@ class FlashDPOTrainer(DPOTrainer):
         if not self.use_shared_prefix:
             return
 
+        assert not self.is_encoder_decoder, "FlashDPOTrainer does not support encoder-decoder models"
         assert not self.use_apex, "FlashDPOTrainer does not support use_apex"
         assert not self.padding_free, "FlashDPOTrainer does not support padding_free"
 

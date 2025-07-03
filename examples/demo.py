@@ -9,7 +9,7 @@ model = AutoModelForCausalLM.from_pretrained(
     model_id, attn_implementation="flash_attention_2", use_cache=False, torch_dtype=torch.bfloat16, device_map="cuda"
 )
 
-prompt = "What is the next 10 numbers of this sequence: " + ", ".join(str(x) for x in range(500))
+prompt = "What are the next 10 numbers of this sequence: " + ", ".join(str(x) for x in range(500))
 chosen_response = ", ".join(str(x) for x in range(500, 500 + 10))
 rejected_response = ", ".join(str(x) for x in range(500, 500 + 10, 2))
 
