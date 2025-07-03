@@ -69,7 +69,6 @@ class FlashRewardTrainer(RewardTrainer):
         self.last_inputs.update(input_ids=input_ids, attention_mask=attention_mask)
 
         with shared_prefix(model, **self.last_inputs, interleaved=True, enabled=self.use_shared_prefix):
-            print("using prefix sharing")
             rewards = model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
