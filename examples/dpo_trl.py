@@ -54,6 +54,7 @@ python3 examples/dpo_trl.py \
 """
 
 import argparse
+from dataclasses import dataclass
 
 import torch
 from datasets import load_dataset
@@ -70,6 +71,11 @@ from trl import (
 from trl.trainer.utils import SIMPLE_CHAT_TEMPLATE
 
 from flash_pref import FlashDPOTrainer  # replace trl DPOTrainer with FlashDPOTrainer
+
+
+@dataclass
+class FlashModelConfig(ModelConfig):
+    use_shared_prefix: bool = True
 
 
 def main(script_args, training_args, model_args):
@@ -131,6 +137,7 @@ def main(script_args, training_args, model_args):
         eval_dataset=dataset[script_args.dataset_test_split] if training_args.eval_strategy != "no" else None,
         processing_class=tokenizer,
         peft_config=peft_config,
+        use_shared_prefix=model_args.use_shared_prefix,
     )
 
     trainer.train()
@@ -147,7 +154,7 @@ def main(script_args, training_args, model_args):
 
 
 def make_parser(subparsers: argparse._SubParsersAction = None):
-    dataclass_types = (ScriptArguments, DPOConfig, ModelConfig)
+    dataclass_types = (ScriptArguments, DPOConfig, FlashModelConfig)
     if subparsers is not None:
         parser = subparsers.add_parser("dpo", help="Run the DPO training script", dataclass_types=dataclass_types)
     else:

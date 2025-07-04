@@ -46,6 +46,7 @@ python3 examples/reward_modeling_trl.py \
 """
 
 import warnings
+from dataclasses import dataclass
 
 import torch
 from datasets import load_dataset
@@ -62,8 +63,14 @@ from trl import (
 
 from flash_pref import FlashRewardTrainer
 
+
+@dataclass
+class FlashModelConfig(ModelConfig):
+    use_shared_prefix: bool = True
+
+
 if __name__ == "__main__":
-    parser = HfArgumentParser((ScriptArguments, RewardConfig, ModelConfig))
+    parser = HfArgumentParser((ScriptArguments, RewardConfig, FlashModelConfig))
     script_args, training_args, model_args = parser.parse_args_into_dataclasses()
     training_args.gradient_checkpointing_kwargs = dict(use_reentrant=False)
 
@@ -116,6 +123,7 @@ if __name__ == "__main__":
         train_dataset=dataset[script_args.dataset_train_split],
         eval_dataset=dataset[script_args.dataset_test_split] if training_args.eval_strategy != "no" else None,
         peft_config=get_peft_config(model_args),
+        use_shared_prefix=model_args.use_shared_prefix,
     )
     trainer.train()
 
