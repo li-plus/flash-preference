@@ -4,4 +4,4 @@ lint:
 	black . --line-length 120
 
 test:
-	pytest -s tests/test_flash_pref.py
+	pytest -sv tests/test_flash_pref.py

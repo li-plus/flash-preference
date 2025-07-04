@@ -8,8 +8,10 @@ import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+import torch.nn.functional as F
 from flash_attn import flash_attn_varlen_func
 from liger_kernel.transformers import _apply_liger_kernel_to_instance
+from peft import LoraConfig, TaskType, get_peft_model
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import ShardingStrategy
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
@@ -194,6 +196,7 @@ def make_inputs(
     response_lens: Sequence[int],
     image_grid_thw: Optional[Sequence[Sequence[int]]],
     image_nums: Optional[Sequence[int]],
+    pad_size: int,
     interleaved: bool,
     config: PretrainedConfig,
 ):
@@ -262,6 +265,10 @@ def make_inputs(
             image_grid_thw = image_grid_thw.tile(group_size, 1)
 
         multimodal_inputs.update(pixel_values=pixel_values.cuda(), image_grid_thw=image_grid_thw.cuda())
+
+    if pad_size > 0:
+        input_ids = F.pad(input_ids, (0, pad_size))
+        attention_mask = F.pad(attention_mask, (0, pad_size))
 
     if interleaved:
         input_ids = to_interleaved(input_ids, group_size=group_size)
@@ -361,8 +368,10 @@ def _test_flash_pref(
     response_lens,
     image_grid_thw,
     image_nums,
-    interleaved,
-    use_liger_kernel,
+    pad_size,
+    interleaved: bool,
+    use_liger_kernel: bool,
+    use_peft: bool,
     parallel_mode: Optional[str] = None,
 ):
     local_rank = int(os.getenv("LOCAL_RANK", "0"))
@@ -373,6 +382,10 @@ def _test_flash_pref(
 
     model = create_model(model_type=model_type, dtype=dtype, vocab_size=2048, attn_implementation=attn_implementation)
     model.gradient_checkpointing_enable()
+
+    if use_peft:
+        peft_config = LoraConfig(task_type=TaskType.CAUSAL_LM, r=16, lora_alpha=32, target_modules=["q_proj", "v_proj"])
+        model = get_peft_model(model, peft_config)
 
     if use_liger_kernel:
         _apply_liger_kernel_to_instance(model)
@@ -397,6 +410,7 @@ def _test_flash_pref(
         response_lens=response_lens,
         image_grid_thw=image_grid_thw,
         image_nums=image_nums,
+        pad_size=pad_size,
         interleaved=interleaved,
         config=unwrap_model(model).config,
     )
@@ -469,20 +483,23 @@ def _test_flash_pref(
     ],
 )
 @pytest.mark.parametrize(
-    "prefix_lens,response_lens,image_grid_thw,image_nums",
+    "prefix_lens,response_lens,image_grid_thw,image_nums,pad_size",
     [
         # batch size 1
-        ((256,), (64, 32), [[1, 8, 16]], (1,)),
+        ((256,), (64, 32), [[1, 8, 16]], (1,), 0),
         # batch size 3
-        ((128, 64, 200), (64, 32, 23, 100, 123, 25), [[1, 8, 16], [1, 12, 20], [1, 12, 8]], (2, 0, 1)),
-        # 3 responses per prefix + w/ or w/o liger kernel
-        ((128, 200), (64, 32, 23, 100, 123, 25), [[1, 8, 16], [1, 12, 20], [1, 12, 8]], (2, 1)),
+        ((128, 64, 200), (64, 32, 23, 100, 123, 25), [[1, 8, 16], [1, 12, 20], [1, 12, 8]], (2, 0, 1), 0),
+        # extra padding
+        ((128, 64, 200), (64, 32, 23, 100, 123, 25), [[1, 8, 16], [1, 12, 20], [1, 12, 8]], (2, 0, 1), 3),
+        # 3 responses per prefix
+        ((128, 200), (64, 32, 23, 100, 123, 25), [[1, 8, 16], [1, 12, 20], [1, 12, 8]], (2, 1), 0),
         # empty prefix or response
-        ((0, 16, 16, 16), (8, 8, 0, 0, 0, 1, 1, 0), None, None),
+        ((0, 16, 16, 16), (8, 8, 0, 0, 0, 1, 1, 0), None, None, 0),
     ],
 )
 @pytest.mark.parametrize("interleaved", [True, False])
 @pytest.mark.parametrize("use_liger_kernel", [False])
+@pytest.mark.parametrize("use_peft", [False, True])
 def test_flash_pref(
     model_type,
     dtype,
@@ -493,8 +510,10 @@ def test_flash_pref(
     response_lens,
     image_grid_thw,
     image_nums,
+    pad_size,
     interleaved,
     use_liger_kernel,
+    use_peft,
 ):
     _test_flash_pref(
         model_type=model_type,
@@ -506,8 +525,10 @@ def test_flash_pref(
         response_lens=response_lens,
         image_grid_thw=image_grid_thw,
         image_nums=image_nums,
+        pad_size=pad_size,
         interleaved=interleaved,
         use_liger_kernel=use_liger_kernel,
+        use_peft=use_peft,
     )
 
 
@@ -543,13 +564,14 @@ def _test_flash_pref_parallel_wrapper(rank, world_size, *args):
     ],
 )
 @pytest.mark.parametrize(
-    "prefix_lens,response_lens,image_grid_thw,image_nums,use_liger_kernel",
+    "prefix_lens,response_lens,image_grid_thw,image_nums,pad_size",
     [
-        ((256,), (64, 32), [[1, 8, 16]], (1,), False),
-        ((256,), (64, 32), [[1, 8, 16]], (1,), True),
+        ((256,), (64, 32), [[1, 8, 16]], (1,), 0),
     ],
 )
+@pytest.mark.parametrize("use_liger_kernel", [False, True])
 @pytest.mark.parametrize("interleaved", [False])
+@pytest.mark.parametrize("use_peft", [False])
 @pytest.mark.parametrize("parallel_mode", ["fsdp", "ddp"])
 def test_flash_pref_parallel(
     model_type,
@@ -561,8 +583,10 @@ def test_flash_pref_parallel(
     response_lens,
     image_grid_thw,
     image_nums,
+    pad_size,
     interleaved,
     use_liger_kernel,
+    use_peft,
     parallel_mode,
 ):
 
@@ -581,8 +605,10 @@ def test_flash_pref_parallel(
             response_lens,
             image_grid_thw,
             image_nums,
+            pad_size,
             interleaved,
             use_liger_kernel,
+            use_peft,
             parallel_mode,
         ),
         nprocs=world_size,
